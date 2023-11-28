@@ -335,6 +335,11 @@ public class Employee {
         }
     }
 
+    public String GetEmpID ()
+    {
+        return emp_id;
+    }
+
     public void ExtractExistedEmp(Connection conn, String emp_ID) {
         String sqlCheck = "SELECT * FROM Employees WHERE emp_id = ?";
         try (PreparedStatement ps = conn.prepareStatement(sqlCheck)) {

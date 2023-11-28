@@ -1,17 +1,18 @@
-package Coffee_Shop;
+package Coffee_Shop_Management;
 
+import java.security.SecureRandom;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Scanner;
-
-import com.mysql.cj.x.protobuf.MysqlxCrud.Collection;
 
 public class Invoices {
     private String invoice_id;
@@ -38,6 +39,43 @@ public class Invoices {
     // public String getDrinkName() {
     // return drink_name;
     // }
+
+    private boolean CheckInvoice_Exists() {
+        String sqlCheck = " SELECT invoice_id FROM Invoices where invoice_id = ?";
+        try (PreparedStatement checkStatement = conn.prepareStatement(sqlCheck)) {
+            checkStatement.setString(1, invoice_id);
+            ResultSet resultSet = checkStatement.executeQuery();
+            return resultSet.next();
+        } catch (SQLException e) {
+            e.printStackTrace();
+            return false;
+        }
+    }
+
+    private void generateInvoiceId() {
+        String lowercase = "abcdefghijklmnopqrstuvwxyz";
+        String uppercase = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+        String Characters = lowercase + uppercase;
+        int IDLength = 12;
+        SimpleDateFormat dateFormat = new SimpleDateFormat("yyyyMMdd");
+        Date currentDate = new Date();
+
+        String datePart = dateFormat.format(currentDate);
+
+        StringBuilder ID = new StringBuilder(IDLength);
+
+        SecureRandom random = new SecureRandom();
+
+        invoice_id = datePart;
+        do {
+            for (int i = invoice_id.length(); i < IDLength; i++) {
+                int randomIndex = random.nextInt(Characters.length());
+                ID.append(Characters.charAt(randomIndex));
+            }
+            invoice_id = invoice_id + ID.toString();
+        } while (CheckInvoice_Exists());
+
+    }
 
     public String Take_Order(Connection conn) {
         String drink_category = new String();
@@ -117,7 +155,7 @@ public class Invoices {
         return drink_price;
     }
 
-    public double Calc_TotalPrice(Map<String, Integer> drink_counts, Map<String, Double> drink_price)
+    public void Calc_TotalPrice(Map<String, Integer> drink_counts, Map<String, Double> drink_price, double disc)
             throws SQLException {
         double totalAmount = 0;
 
@@ -129,17 +167,36 @@ public class Invoices {
                 totalAmount += quantity * price;
             }
         }
-        return totalAmount;
+        total_amount = totalAmount - (totalAmount * disc);
+    }
+
+    private boolean CheckCus_Exists() {
+        String sqlCheck = " SELECT cus_id FROM Customers where cus_phone = ?";
+        try (PreparedStatement checkStatement = conn.prepareStatement(sqlCheck)) {
+            checkStatement.setString(1, cus_phone);
+            ResultSet resultSet = checkStatement.executeQuery();
+            return resultSet.next();
+        } catch (SQLException e) {
+            e.printStackTrace();
+            return false;
+        }
+    }
+
+    private void InputPhone() {
+        do {
+            System.out.println("Enter customer's phone number(consists of 10 digits): ");
+            cus_phone = sc.nextLine();
+        } while (cus_phone.isEmpty() || cus_phone.length() != 10 || cus_phone.charAt(0) != 48);
     }
 
     public void Input_invoice(Connection conn, String emp_id) throws SQLException {
         List<String> orderItems = new ArrayList<String>();
         Customers cus = null;
         String answer = new String();
+        double discount = 0.0;
+
         do {
-
             orderItems.add(Take_Order(conn));
-
             System.out.println("Would you like to order another drink? (y if yes or n if no)");
             answer = sc.nextLine();
         } while (answer.equals("Y") || answer.equals("y"));
@@ -148,18 +205,49 @@ public class Invoices {
         Map<String, Integer> drink_counts = DrinkCounts(orderItems);
         Map<String, Double> drink_price = GetDrinkPrice(drink_counts);
 
-        total_amount = Calc_TotalPrice(drink_counts, drink_price);
-
         System.out.println("Ask if the customer wants to adding points(y if yes, n if no))?");
         String choice = sc.nextLine();
-        
+
+        InputPhone();
+
         if (choice.equals("y") || choice.equals("Y")) {
-            cus = new Customers(conn);
-            cus.InputTotalAmount(total_amount);
-            cus.Add_Customer(conn);
+            if (!CheckCus_Exists()) {
+                System.out.println("New customer!");
+                cus = new Customers(conn);
+                cus.InputTotalAmount(total_amount);
+                cus.Add_Customer(cus_phone);
+                discount = 0.0;
+            } else {
+                cus = new Customers(conn);
+                cus.ExtractExistedCustomer(cus_phone);
+                discount = cus.GetDiscount();
+            }
+        }
+        generateInvoiceId();
+
+        Calc_TotalPrice(drink_counts, drink_price, discount);
+
+        PrintInvoice(drink_counts, drink_price, total_amount);
+
+    }
+
+    private void PrintInvoice(Map<String, Integer> drink_counts, Map<String, Double> drink_price, Double total_amount) {
+        System.out.println("------------------------ Invoice ----------------------");
+        System.out.println("Description\t\tQuantity\tPrice");
+        System.out.println("-------------------------------------------------------");
+
+        for (Map.Entry<String, Integer> entry : drink_counts.entrySet()) {
+            String drinkName = entry.getKey();
+            int quantity = entry.getValue();
+            double price = drink_price.getOrDefault(drinkName, 0.0);
+
+            System.out.printf("%-15s\t\t%-8d\t$%.0f VND%n", drinkName, quantity, price);
         }
 
-
+        System.out.println("-------------------------------------------------------");
+        System.out.printf("Total Amount:\t\t\t\t$%.0f VND%n", total_amount);
+        System.out.println("Invoice created by staff: " + invoice_id);
+        System.out.println("-------------------------------------------------------");
     }
 
     // public static void main(String[] args) throws SQLException {
